@@ -1,4 +1,5 @@
-import SysTray from "systray2";
+// Use require() for systray2 - works better with Bun compile
+const SysTray = require("systray2").default;
 import { Client } from "@xhayper/discord-rpc";
 import { ActivityType } from "discord-api-types/v10";
 import { $ } from "bun";
