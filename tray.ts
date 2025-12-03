@@ -1,5 +1,6 @@
 // Use require() for systray2 - works better with Bun compile
 const SysTray = require("systray2").default;
+import type { ClickEvent } from "systray2";
 import { Client } from "@xhayper/discord-rpc";
 import { ActivityType } from "discord-api-types/v10";
 import { $ } from "bun";
@@ -308,7 +309,7 @@ async function main() {
     copyDir: true,
   });
 
-  systray.onClick((action) => {
+  systray.onClick((action: ClickEvent) => {
     const title = action.item.title;
 
     if (title === "⏸️ Pause") {
@@ -412,16 +413,21 @@ async function main() {
           ? startTimestamp + info.duration * 1000
           : undefined;
 
+      const displayName = info.artist
+        ? `${info.title} - ${info.artist}`
+        : info.title || "Telegram";
+
       await rpc.user?.setActivity({
+        name: displayName,
         type: ActivityType.Listening,
         details: details.substring(0, 128),
         state: state.substring(0, 128),
         startTimestamp: new Date(startTimestamp),
         endTimestamp: endTimestamp ? new Date(endTimestamp) : undefined,
         largeImageKey: artworkUrl || "telegram",
-        largeImageText: info.album || "Telegram",
+        largeImageText: info.album || info.title || "Telegram",
         smallImageKey: "telegram",
-        smallImageText: "Playing via Telegram",
+        smallImageText: info.title || "Playing via Telegram",
       });
     } else {
       if (lastTrack !== null) {
