@@ -388,7 +388,11 @@ async function main() {
 
       const artworkUrl = await fetchArtworkUrl(info.title, info.artist);
 
-      const details = info.title || "Unknown Track";
+      let details = info.title || "Unknown Track";
+      // Discord requires details to be at least 2 characters long
+      if (details.length < 2) {
+        details = `${details} `;
+      }
       let state = info.artist || "Unknown Artist";
       if (info.duration) {
         const mins = Math.floor(info.duration / 60);

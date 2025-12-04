@@ -390,7 +390,11 @@ async function main() {
       const artworkUrl = await fetchArtworkUrl(info.title, info.artist);
 
       // Build presence details
-      const details = info.title || "Unknown Track";
+      let details = info.title || "Unknown Track";
+      // Discord requires details to be at least 2 characters long
+      if (details.length < 2) {
+        details = `${details} `;
+      }
 
       // Build state with artist and duration
       let state = info.artist || "Unknown Artist";
