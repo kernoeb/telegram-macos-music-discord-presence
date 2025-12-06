@@ -702,6 +702,9 @@ async function main() {
       const fallbackImage = mediaSource === "youtube-music" ? "youtube-music" : "telegram";
       const sourceText = mediaSource === "youtube-music" ? "YouTube Music" : "Telegram";
 
+      // Discord needs at least 2 characters for title
+      if (info.title?.length === 1) info.title = info.title + ' '
+
       await rpc.user?.setActivity({
         name: displayName,
         type: ActivityType.Listening,
