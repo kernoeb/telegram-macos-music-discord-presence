@@ -19,40 +19,26 @@ const TELEGRAM_BUNDLE_IDS = [
   "com.tdesktop.Telegram",
 ];
 
-// YouTube Music PWA extension ID (same across Chrome, Brave, Edge)
-const YOUTUBE_MUSIC_EXTENSION_ID = "cinhimbnkkaeohfgghhklpknlkffjgod";
+// Check if a PID belongs to YouTube Music PWA
+const ytMusicPidCache = new Map<number, { isYtMusic: boolean; timestamp: number }>();
+const YT_MUSIC_CACHE_TTL = 30000; // 30 seconds
 
-// Cache for YouTube Music PWA process detection
-let ytMusicProcessCache: { result: boolean; timestamp: number } | null = null;
-const YT_MUSIC_CACHE_TTL = 10000; // 10 seconds
-
-// Check if YouTube Music PWA process is running
-async function isYouTubeMusicProcessRunning(): Promise<boolean> {
+async function isYouTubeMusicPid(pid: number): Promise<boolean> {
+  const cached = ytMusicPidCache.get(pid);
   const now = Date.now();
-  if (ytMusicProcessCache && now - ytMusicProcessCache.timestamp < YT_MUSIC_CACHE_TTL) {
-    return ytMusicProcessCache.result;
+  if (cached && now - cached.timestamp < YT_MUSIC_CACHE_TTL) {
+    return cached.isYtMusic;
   }
 
   try {
-    const result = await $`pgrep -fl "YouTube Music.app/Contents/MacOS/app_mode_loader"`.quiet().text();
-    const isRunning = result.trim().length > 0;
-    ytMusicProcessCache = { result: isRunning, timestamp: now };
-    return isRunning;
+    const result = await $`ps -p ${pid} -o args=`.quiet().text();
+    const isYtMusic = result.toLowerCase().includes("youtube music.app");
+    ytMusicPidCache.set(pid, { isYtMusic, timestamp: now });
+    return isYtMusic;
   } catch {
-    // pgrep returns exit code 1 when no match
-    ytMusicProcessCache = { result: false, timestamp: now };
+    ytMusicPidCache.set(pid, { isYtMusic: false, timestamp: now });
     return false;
   }
-}
-
-// Match YouTube Music PWA installed via any Chromium browser
-function isYouTubeMusicPWA(bundleId: string): boolean {
-  // PWA bundle IDs follow pattern: com.browser.Browser.app.{extension_id}
-  // Examples:
-  //   com.google.Chrome.app.cinhimbnkkaeohfgghhklpknlkffjgod
-  //   com.brave.Browser.app.cinhimbnkkaeohfgghhklpknlkffjgod
-  //   com.microsoft.edgemac.app.cinhimbnkkaeohfgghhklpknlkffjgod
-  return bundleId.toLowerCase().endsWith(`.app.${YOUTUBE_MUSIC_EXTENSION_ID.toLowerCase()}`);
 }
 
 // Polling interval in milliseconds
@@ -80,6 +66,7 @@ interface NowPlayingInfo {
   timestamp: number | null;
   playbackRate: number | null;
   bundleIdentifier: string | null;
+  processIdentifier: number | null;
   isPlaying: boolean;
 }
 
@@ -114,6 +101,7 @@ interface JXAResult {
   client: {
     bundleIdentifier: string | null;
     parentApplicationBundleIdentifier: string | null;
+    processIdentifier: number | null;
   } | null;
   info: {
     kMRMediaRemoteNowPlayingInfoTitle?: string;
@@ -157,6 +145,7 @@ function run() {
           client.parentApplicationBundleIdentifier
             ? ObjC.unwrap(client.parentApplicationBundleIdentifier)
             : null,
+        processIdentifier: client.processIdentifier ?? null,
       };
     }
 
@@ -213,6 +202,7 @@ async function getNowPlayingInfo(): Promise<NowPlayingInfo> {
         timestamp: null,
         playbackRate: null,
         bundleIdentifier: null,
+        processIdentifier: null,
         isPlaying: false,
       };
     }
@@ -231,6 +221,7 @@ async function getNowPlayingInfo(): Promise<NowPlayingInfo> {
       timestamp: parsed.info.kMRMediaRemoteNowPlayingInfoTimestamp ?? null,
       playbackRate: parsed.info.kMRMediaRemoteNowPlayingInfoPlaybackRate ?? null,
       bundleIdentifier: bundleId,
+      processIdentifier: parsed.client?.processIdentifier ?? null,
       isPlaying: parsed.isPlaying,
     };
   } catch (error) {
@@ -244,6 +235,7 @@ async function getNowPlayingInfo(): Promise<NowPlayingInfo> {
       timestamp: null,
       playbackRate: null,
       bundleIdentifier: null,
+      processIdentifier: null,
       isPlaying: false,
     };
   }
@@ -261,15 +253,9 @@ async function getMediaSource(info: NowPlayingInfo): Promise<MediaSource> {
     return "telegram";
   }
 
-  // Check YouTube Music PWA by bundle ID pattern
-  if (isYouTubeMusicPWA(bundleId)) {
-    return "youtube-music";
-  }
-
-  // Check for app_mode_loader (Chromium PWA loader) - need to verify it's YouTube Music
-  if (bundleId === "app_mode_loader") {
-    const isYTMusic = await isYouTubeMusicProcessRunning();
-    if (isYTMusic) {
+  // Check for app_mode_loader (Chromium PWA loader) - verify it's YouTube Music via PID
+  if (bundleId === "app_mode_loader" && info.processIdentifier) {
+    if (await isYouTubeMusicPid(info.processIdentifier)) {
       return "youtube-music";
     }
   }
@@ -460,7 +446,7 @@ async function testMode() {
     } else {
       console.log("❌ No supported media source detected");
       if (info.bundleIdentifier) {
-        console.log(`   Current player: ${info.bundleIdentifier}`);
+        console.log(`   Current player: ${info.bundleIdentifier} (PID: ${info.processIdentifier})`);
       }
     }
 
@@ -659,8 +645,9 @@ async function main() {
 
     const info = await getNowPlayingInfo();
     const mediaSource = await getMediaSource(info);
+    const isPlaying = info.isPlaying && info.playbackRate && info.playbackRate > 0;
 
-    if (mediaSource && info.title && info.isPlaying && info.playbackRate && info.playbackRate > 0) {
+    if (mediaSource && info.title && isPlaying) {
       const trackId = `${info.title}-${info.artist}-${info.album}`;
       const isNewTrack = trackId !== lastTrack;
 
