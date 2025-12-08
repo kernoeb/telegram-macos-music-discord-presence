@@ -708,6 +708,11 @@ async function main() {
       if (info.title?.length === 1) info.title = info.title + ' ';
       if (info.title?.length > 127) info.title = info.title.substring(0, 127);
 
+      if (info.album) {
+        if (info.album.length === 1) info.album = info.album + ' ';
+        if (info.album.length > 127) info.album = info.album.substring(0, 127);
+      }
+
       await rpc.user?.setActivity({
         name: displayName,
         type: ActivityType.Listening,
