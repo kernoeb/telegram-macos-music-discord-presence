@@ -1,5 +1,11 @@
 #!/bin/bash
 
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
 # Music Discord Rich Presence Launcher
 # Make sure to set your Discord Client ID below!
 
