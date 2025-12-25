@@ -367,6 +367,48 @@ async function searchDeezer(
   return null;
 }
 
+async function searchYouTubeThumbnail(title: string, artist: string | null): Promise<string | null> {
+  const cacheKey = `yt-${title}-${artist || ""}`;
+
+  if (artworkCache.has(cacheKey)) {
+    return artworkCache.get(cacheKey) || null;
+  }
+
+  const searchTerm = artist ? `${title} ${artist}` : title;
+  const encodedTerm = encodeURIComponent(searchTerm);
+
+  try {
+    // Fetch YouTube search results page directly
+    const url = `https://www.youtube.com/results?search_query=${encodedTerm}`;
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
+
+    if (response.ok) {
+      const html = await response.text();
+      // Extract first video ID from ytInitialData
+      const videoIdMatch = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+      if (videoIdMatch && videoIdMatch[1]) {
+        const videoId = videoIdMatch[1];
+        // Use maxresdefault, fall back to hqdefault if not available
+        const thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+        artworkCache.set(cacheKey, thumbnail);
+        console.log(`🎨 Found artwork via YouTube for "${title}"`);
+        return thumbnail;
+      }
+    }
+  } catch {
+    // Silently fail
+  }
+
+  artworkCache.set(cacheKey, null);
+  return null;
+}
+
 async function fetchArtworkUrl(title: string, artist: string | null): Promise<string | null> {
   const cacheKey = `${title}-${artist || ""}`;
 
@@ -662,7 +704,12 @@ async function main() {
         currentTrackStartTime = Date.now();
       }
 
-      const artworkUrl = await fetchArtworkUrl(info.title, info.artist);
+      let artworkUrl = await fetchArtworkUrl(info.title, info.artist);
+
+      // Fallback to YouTube thumbnail for YouTube Music if no artwork found
+      if (!artworkUrl && mediaSource === "youtube-music") {
+        artworkUrl = await searchYouTubeThumbnail(info.title, info.artist);
+      }
 
       let details = info.title || "Unknown Track";
       if (details.length < 2) details = `${details} `;
